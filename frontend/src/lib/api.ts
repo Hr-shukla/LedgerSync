@@ -84,9 +84,10 @@ export function getTransactionAudit(id: string): Promise<TransactionAuditDetail>
 export interface ExceptionFilters {
   reason_code?: string;
   min_age_days?: number;
+  include_resolved?: boolean;
   page?: number;
   page_size?: number;
-  [key: string]: string | number | undefined;
+  [key: string]: string | number | boolean | undefined;
 }
 
 export function getExceptions(filters: ExceptionFilters = {}): Promise<ExceptionsResponse> {

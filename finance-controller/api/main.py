@@ -110,13 +110,22 @@ def overview():
     s = _reload_if_needed()
     m = s["store"].report["with_ai"]["metrics"]
     g = s["store"].report["with_ai"]["grading"]
+
+    # "Open" must mean open here too -- subtract resolved exceptions from both
+    # the count and the rupee value at risk, the same way GET /exceptions does,
+    # rather than showing the pipeline's raw unfiltered total forever.
+    resolutions = s["resolutions"].all()
+    resolved_ids = set(resolutions.keys())
+    open_exceptions = [e for e in s["store"].exceptions if e["record_id"] not in resolved_ids]
+
     return {
         "match_rate_pct": m["overall_match_rate_pct"],
         "reconciled_value_rupees": m["reconciled_value_rupees"],
         "total_value_rupees": m["total_value_rupees"],
         "reconciled_value_pct": m["reconciled_value_pct"],
-        "value_at_risk_rupees": m["exception_value_rupees"],
-        "open_exceptions_count": sum(m["exception_count_by_reason"].values()),
+        "value_at_risk_rupees": round(sum(abs(e["amount"]) for e in open_exceptions), 2),
+        "open_exceptions_count": len(open_exceptions),
+        "resolved_exceptions_count": len(s["store"].exceptions) - len(open_exceptions),
         "precision_pct": round(g["precision"] * 100, 1),
         "recall_pct": round(g["recall"] * 100, 1),
         "false_match_rate_pct": round(g["false_match_rate"] * 100, 1),
@@ -240,7 +249,14 @@ def transaction_audit(txn_id: str):
 # ----------------------------------------------------------------------
 @app.get("/exceptions")
 def exceptions(reason_code: Optional[str] = None, min_age_days: Optional[int] = None,
-               page: int = 1, page_size: int = 25):
+               include_resolved: bool = False, page: int = 1, page_size: int = 25):
+    """By default this returns only UNRESOLVED exceptions -- "open" means open
+    everywhere in this response: total_count, total_value_at_risk_rupees, and
+    the per-reason summary chips all reflect unresolved items only, so
+    resolving something actually reduces every count the UI shows, instead of
+    just tagging a row while every total stays frozen. Pass
+    include_resolved=true to also see resolved items (still marked
+    resolved=true on each, with their resolution details) for audit purposes."""
     s = _reload_if_needed()
     store, res_store, as_of = s["store"], s["resolutions"], s["as_of_date"]
     resolutions = res_store.all()
@@ -248,12 +264,15 @@ def exceptions(reason_code: Optional[str] = None, min_age_days: Optional[int] = 
     def _with_age(e: dict) -> dict:
         record_date = _record_date(store, e["record_id"], e["source"])
         age_days = days_between(as_of, record_date) if record_date and as_of else None
-        return {**e, "record_date": record_date, "age_days": age_days}
+        r = resolutions.get(e["record_id"])
+        return {**e, "record_date": record_date, "age_days": age_days, "resolved": bool(r), "resolution": r}
 
     all_exceptions = [_with_age(e) for e in store.exceptions]
+    resolved_count = sum(1 for e in all_exceptions if e["resolved"])
+    open_exceptions = [e for e in all_exceptions if not e["resolved"]]
 
     by_reason: dict[str, dict] = {}
-    for e in all_exceptions:
+    for e in open_exceptions:
         b = by_reason.setdefault(e["reason_code"], {"reason_code": e["reason_code"], "count": 0, "value_at_risk_rupees": 0.0})
         b["count"] += 1
         b["value_at_risk_rupees"] += abs(e["amount"])
@@ -261,23 +280,21 @@ def exceptions(reason_code: Optional[str] = None, min_age_days: Optional[int] = 
     for b in summary:
         b["value_at_risk_rupees"] = round(b["value_at_risk_rupees"], 2)
 
-    items = all_exceptions
+    items = all_exceptions if include_resolved else open_exceptions
     if reason_code is not None:
         items = [e for e in items if e["reason_code"] == reason_code]
     if min_age_days is not None:
         items = [e for e in items if (e["age_days"] or 0) >= min_age_days]
     total = len(items)
     start = (page - 1) * page_size
-    page_items = []
-    for e in items[start:start + page_size]:
-        r = resolutions.get(e["record_id"])
-        page_items.append({**e, "resolved": bool(r), "resolution": r})
+    page_items = items[start:start + page_size]
 
     return {
         "as_of_date": as_of,
         "summary": summary,
-        "total_count": len(all_exceptions),
-        "total_value_at_risk_rupees": round(sum(abs(e["amount"]) for e in all_exceptions), 2),
+        "total_count": len(open_exceptions),
+        "resolved_count": resolved_count,
+        "total_value_at_risk_rupees": round(sum(abs(e["amount"]) for e in open_exceptions), 2),
         "page": page, "page_size": page_size, "filtered_count": total,
         "items": page_items,
     }

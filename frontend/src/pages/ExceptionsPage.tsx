@@ -27,11 +27,12 @@ export const ExceptionsPage: React.FC<ExceptionsPageProps> = ({ onNavigateToAudi
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [page, setPage] = useState(1);
+  const [showResolved, setShowResolved] = useState(false);
   const { addToast } = useToast();
 
   const { data, loading, error, reload } = useApiData(
-    () => getExceptions({ page_size: 1000 }),
-    []
+    () => getExceptions({ page_size: 1000, include_resolved: showResolved }),
+    [showResolved]
   );
 
   const allItems = data?.items ?? [];
@@ -138,6 +139,19 @@ export const ExceptionsPage: React.FC<ExceptionsPageProps> = ({ onNavigateToAudi
           </div>
 
           <div className="flex items-center gap-spacing-xs flex-wrap">
+            <button
+              onClick={() => { setShowResolved((v) => !v); setPage(1); }}
+              className={`h-8 px-spacing-md rounded border font-body-medium text-body-medium flex items-center gap-spacing-xs shadow-xs text-xs font-medium active:scale-[0.98] transition-colors ${
+                showResolved
+                  ? 'bg-surface-container text-on-surface border-outline-variant'
+                  : 'bg-surface-container-lowest text-on-surface-variant border-outline-variant hover:bg-surface-container-low'
+              }`}
+              type="button"
+              title="Resolved exceptions are excluded from the queue and every count by default -- toggle this to also see them, with a Reopen option."
+            >
+              <span className="material-symbols-outlined text-[16px]">{showResolved ? 'visibility_off' : 'visibility'}</span>
+              <span>{showResolved ? 'Hide' : 'Show'} Resolved ({data.resolved_count})</span>
+            </button>
             <button
               onClick={handleBulkResolve}
               className="h-8 px-spacing-md rounded bg-secondary-fixed text-on-secondary-fixed hover:bg-secondary-fixed-dim transition-colors flex items-center gap-spacing-xs font-body-medium text-body-medium shadow-xs text-xs font-semibold border border-secondary-fixed-dim active:scale-[0.98]"

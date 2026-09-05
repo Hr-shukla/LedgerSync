@@ -53,6 +53,7 @@ export interface OverviewData {
   reconciled_value_pct: number;
   value_at_risk_rupees: number;
   open_exceptions_count: number;
+  resolved_exceptions_count: number;
   precision_pct: number;
   recall_pct: number;
   false_match_rate_pct: number;
@@ -159,6 +160,7 @@ export interface ExceptionsResponse {
   as_of_date: string | null;
   summary: ExceptionSummaryBucket[];
   total_count: number;
+  resolved_count: number;
   total_value_at_risk_rupees: number;
   page: number;
   page_size: number;

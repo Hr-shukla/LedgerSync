@@ -76,20 +76,34 @@ def test_exceptions_and_resolve_roundtrip(api_client):
         pytest.skip("no exceptions in this seed/groups combination")
     record_id = body["items"][0]["record_id"]
     assert body["items"][0]["resolved"] is False
+    open_count_before = body["total_count"]
 
     resolve_resp = api_client.post(f"/exceptions/{record_id}/resolve", json={"note": "checked manually"})
     assert resolve_resp.status_code == 200
 
+    # Resolved means open everywhere: it drops out of the default (open-only)
+    # list and both total_count and resolved_count reflect it immediately.
     r2 = api_client.get("/exceptions")
-    updated = next(e for e in r2.json()["items"] if e["record_id"] == record_id)
+    body2 = r2.json()
+    assert body2["total_count"] == open_count_before - 1
+    assert not any(e["record_id"] == record_id for e in body2["items"])
+
+    # include_resolved=true is how you audit it -- still there, marked resolved.
+    r2_all = api_client.get("/exceptions", params={"include_resolved": "true"})
+    updated = next(e for e in r2_all.json()["items"] if e["record_id"] == record_id)
     assert updated["resolved"] is True
     assert updated["resolution"]["note"] == "checked manually"
+
+    # /overview's open count must agree with /exceptions' open count.
+    overview_after_resolve = api_client.get("/overview").json()
+    assert overview_after_resolve["open_exceptions_count"] == open_count_before - 1
 
     unresolve_resp = api_client.post(f"/exceptions/{record_id}/unresolve")
     assert unresolve_resp.status_code == 200
     r3 = api_client.get("/exceptions")
-    reverted = next(e for e in r3.json()["items"] if e["record_id"] == record_id)
-    assert reverted["resolved"] is False
+    body3 = r3.json()
+    assert body3["total_count"] == open_count_before
+    assert any(e["record_id"] == record_id for e in body3["items"])
 
 
 def test_resolve_unknown_record_404s(api_client):
