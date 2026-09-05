@@ -110,3 +110,9 @@ export function unresolveException(recordId: string): Promise<{ status: string; 
 export function getAuditLog(limit = 50): Promise<AuditLogResponse> {
   return apiFetch<AuditLogResponse>(`/audit-log${qs({ limit })}`);
 }
+
+// Re-runs the real pipeline against the existing dataset (~15s, live Tier 4
+// call included if a key is configured) -- not a simulated progress bar.
+export function runReconcile(): Promise<{ status: string; log_tail: string }> {
+  return apiFetch('/reconcile', { method: 'POST' });
+}

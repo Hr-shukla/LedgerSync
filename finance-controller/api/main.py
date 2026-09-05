@@ -20,6 +20,7 @@ that expects different keys.
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from pathlib import Path
 from contextlib import asynccontextmanager
@@ -124,6 +125,27 @@ def overview():
         "ai_available": m["ai_available"],
         "ai_provider": m.get("ai_provider"),
     }
+
+
+# ----------------------------------------------------------------------
+# POST /reconcile -- "Run Reconcile" button on the Overview screen
+# ----------------------------------------------------------------------
+@app.post("/reconcile")
+def run_reconcile():
+    """Re-runs the real pipeline (run_reconciliation.py) against the existing
+    data/ -- same synthetic dataset, fresh Tier 1-5 pass including a live
+    Tier 4 call if a key is configured. Not a simulation: this is the exact
+    command from the README, just triggered from the button instead of a
+    terminal. Appends a new row to output/run_history.jsonl like any other
+    run, then clears the in-memory cache so the next GET reflects it."""
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "run_reconciliation.py")],
+        cwd=str(ROOT), capture_output=True, text=True, timeout=180,
+    )
+    if result.returncode != 0:
+        raise HTTPException(500, f"run_reconciliation.py failed:\n{result.stderr[-2000:]}")
+    _state.clear()
+    return {"status": "completed", "log_tail": result.stdout[-2000:]}
 
 
 # ----------------------------------------------------------------------

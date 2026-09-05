@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { getOverview, getAuditLog } from '../lib/api';
+import { getOverview, getAuditLog, runReconcile, ApiError } from '../lib/api';
 import { useApiData } from '../hooks/useApiData';
 import { NavPage } from '../components/layout/Sidebar';
 import { CopyButton } from '../components/common/CopyButton';
 import { LoadingState, ErrorState } from '../components/common/AsyncState';
+import { useToast } from '../components/common/ToastContext';
 import { OverviewData, RunHistoryEntry } from '../types';
 
 interface OverviewPageProps {
@@ -24,10 +25,30 @@ function formatINR(n: number): string {
 
 export const OverviewPage: React.FC<OverviewPageProps> = ({ onNavigate }) => {
   const [hoveredTier, setHoveredTier] = useState<string | null>(null);
+  const [isReconciling, setIsReconciling] = useState(false);
+  const { addToast } = useToast();
   const { data: overview, loading: overviewLoading, error: overviewError, reload: reloadOverview } =
     useApiData<OverviewData>(getOverview, []);
-  const { data: auditLog, loading: runsLoading, error: runsError } =
+  const { data: auditLog, loading: runsLoading, error: runsError, reload: reloadAuditLog } =
     useApiData(() => getAuditLog(4), []);
+
+  const handleRunReconcile = async () => {
+    setIsReconciling(true);
+    try {
+      await runReconcile();
+      addToast({ type: 'success', title: 'Reconciliation complete', message: 'Pipeline re-ran against the current dataset.' });
+      reloadOverview();
+      reloadAuditLog();
+    } catch (e) {
+      addToast({
+        type: 'error',
+        title: 'Reconciliation run failed',
+        message: e instanceof ApiError ? e.message : 'Unknown error',
+      });
+    } finally {
+      setIsReconciling(false);
+    }
+  };
 
   if (overviewLoading) return <LoadingState label="Loading reconciliation overview..." />;
   if (overviewError || !overview) return <ErrorState message={overviewError || 'No data returned'} onRetry={reloadOverview} />;
@@ -66,13 +87,16 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({ onNavigate }) => {
             <span>Export Executive Summary</span>
           </button>
           <button
-            disabled
-            title="No POST /run endpoint exists yet -- trigger a new run from the server with `python run_reconciliation.py`."
-            className="h-8 px-spacing-md rounded text-on-primary bg-primary font-body-medium text-body-medium flex items-center gap-spacing-xs opacity-60 cursor-not-allowed"
+            onClick={handleRunReconcile}
+            disabled={isReconciling}
+            title="Re-runs the real pipeline against the current dataset (~15s) -- a live Tier 4 call included, not a simulated progress bar."
+            className="h-8 px-spacing-md rounded text-on-primary bg-primary hover:bg-neutral-800 font-body-medium text-body-medium flex items-center gap-spacing-xs transition-colors shadow-sm disabled:opacity-75 active:scale-[0.98]"
             type="button"
           >
-            <span className="material-symbols-outlined text-[16px]">play_arrow</span>
-            <span>Run Reconcile</span>
+            <span className={`material-symbols-outlined text-[16px] ${isReconciling ? 'animate-spin' : ''}`}>
+              {isReconciling ? 'autorenew' : 'play_arrow'}
+            </span>
+            <span>{isReconciling ? 'Running reconciliation...' : 'Run Reconcile'}</span>
           </button>
         </div>
       </div>
